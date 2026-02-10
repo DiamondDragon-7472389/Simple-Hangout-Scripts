@@ -1,29 +1,17 @@
 -- StarterGUI->FishingGUI->SideMenu->InvetoryFrame->InvetoryHandler
-print("Inventory Script: STARTING...")
-
 local player = game.Players.LocalPlayer
 local gui = script.Parent.Parent
 local frame = script.Parent
+
+-- UI REFERENCES
 local list = frame:WaitForChild("List")
 local template = frame:WaitForChild("Template")
+local detailsPanel = frame:WaitForChild("DetailsPanel")
+local closeBtn = frame:WaitForChild("CloseButton")
 
--- DEBUG: Check for SideMenu
-print("Inventory Script: Looking for SideMenu...")
-local sideMenu = gui:WaitForChild("SideMenu", 5) -- Waits 5 seconds max
-if not sideMenu then
-	warn("CRITICAL ERROR: Could not find 'SideMenu' inside FishingGUI! Check spelling!")
-	return
-end
-
--- DEBUG: Check for Button
-print("Inventory Script: Looking for OpenInventory button...")
-local openBtn = sideMenu:WaitForChild("OpenInventory", 5)
-if not openBtn then
-	warn("CRITICAL ERROR: Could not find 'OpenInventory' inside SideMenu! Check spelling!")
-	return
-end
-
-print("Inventory Script: SETUP COMPLETE. Ready for clicks.")
+-- SIDE MENU REFERENCES (Adjust path if needed!)
+local sideMenu = gui:WaitForChild("SideMenu")
+local openBtn = sideMenu:WaitForChild("OpenInventory")
 
 local inventoryFolder = player:WaitForChild("FishInventory")
 local FishDB = require(game.ReplicatedStorage:WaitForChild("FishDatabase"))
@@ -31,8 +19,24 @@ local FishDB = require(game.ReplicatedStorage:WaitForChild("FishDatabase"))
 local isOpen = false
 frame.Visible = false
 
+-- FUNCTION: Update the Right-Hand Sidebar
+function ShowDetails(fishName, count)
+	local data = FishDB.Fish[fishName]
+	if not data then return end
+
+	-- Update Text
+	detailsPanel.Title.Text = fishName
+	detailsPanel.Description.Text = data.Description or "No description available."
+
+	-- Update Value
+	local totalValue = data.Price * count
+	detailsPanel.Value.Text = "Sell Value: $" .. totalValue .. " ($" .. data.Price .. " each)"
+
+	-- Update Image (If you have images in DB)
+	-- detailsPanel.Icon.Image = data.Image or ""
+end
+
 function UpdateInventory()
-	print("Updating Inventory...")
 	-- 1. Clear old items
 	for _, child in pairs(list:GetChildren()) do
 		if child:IsA("Frame") then child:Destroy() end
@@ -45,6 +49,8 @@ function UpdateInventory()
 	end
 
 	-- 3. Create frames
+	local firstItem = nil -- We will auto-select the first item
+
 	for fishName, count in pairs(counts) do
 		local data = FishDB.Fish[fishName]
 		if data then
@@ -53,27 +59,43 @@ function UpdateInventory()
 			clone.Parent = list
 			clone.Visible = true
 
-			-- Check if labels exist before changing text to prevent errors
-			if clone:FindFirstChild("NameLabel") then
-				clone.NameLabel.Text = fishName
-			end
-			if clone:FindFirstChild("CountLabel") then
-				clone.CountLabel.Text = "x" .. count
+			-- Setup Labels
+			if clone:FindFirstChild("NameLabel") then clone.NameLabel.Text = fishName end
+			if clone:FindFirstChild("CountLabel") then clone.CountLabel.Text = "x" .. count end
+
+			-- CLICK LOGIC: Update Sidebar on Click
+			local btn = clone:FindFirstChild("ClickBox")
+			if btn then
+				btn.MouseButton1Click:Connect(function()
+					ShowDetails(fishName, count)
+				end)
 			end
 
-			-- Hover for Description
-			clone.MouseEnter:Connect(function()
-				local totalVal = count * data.Price
-				print(data.Description .. " | Value: " .. totalVal)
-			end)
+			-- Save first item to auto-select later
+			if not firstItem then firstItem = {Name = fishName, Count = count} end
 		end
+	end
+
+	-- 4. Auto-Select the first item so the sidebar isn't empty
+	if firstItem then
+		ShowDetails(firstItem.Name, firstItem.Count)
+	else
+		detailsPanel.Title.Text = "Empty"
+		detailsPanel.Description.Text = "Go catch some fish!"
+		detailsPanel.Value.Text = ""
 	end
 end
 
+-- OPEN/CLOSE LOGIC
 openBtn.MouseButton1Click:Connect(function()
-	print("BUTTON CLICKED!") -- If you don't see this, the button is blocked!
 	isOpen = not isOpen
 	frame.Visible = isOpen
 	if isOpen then
 		UpdateInventory()
 	end
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+	isOpen = false
+	frame.Visible = false
+end)
