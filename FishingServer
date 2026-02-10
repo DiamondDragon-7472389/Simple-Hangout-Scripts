@@ -1,0 +1,119 @@
+-- ServerScrptService->FishingServer
+local DataStoreService = game:GetService("DataStoreService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+
+local PlayerData = DataStoreService:GetDataStore("FishingGameData_V2")
+local FishDB = require(ReplicatedStorage:WaitForChild("FishDatabase"))
+local CatchEvent = ReplicatedStorage:WaitForChild("CatchFish")
+
+-- Temporary table to remember what fish a player currently has on the hook
+local activeHooks = {}
+
+-- 1. SETUP DATA (Same as before)
+Players.PlayerAdded:Connect(function(player)
+	local leaderstats = Instance.new("Folder", player)
+	leaderstats.Name = "leaderstats"
+	local cash = Instance.new("IntValue", leaderstats)
+	cash.Name = "Cash"
+
+	local inventory = Instance.new("Folder", player)
+	inventory.Name = "FishInventory"
+
+	local success, data = pcall(function() return PlayerData:GetAsync(player.UserId) end)
+	if success and data then
+		cash.Value = data.Cash or 0
+		if data.Inventory then
+			for _, fishName in pairs(data.Inventory) do
+				local fishTag = Instance.new("StringValue", inventory)
+				fishTag.Name = fishName
+			end
+		end
+		if data.HasRod then
+			local rod = game.ServerStorage:FindFirstChild("FlimsyRod")
+			if rod then rod:Clone().Parent = player.Backpack end
+		end
+	end
+end)
+
+-- 2. SAVE DATA (Same as before)
+Players.PlayerRemoving:Connect(function(player)
+	activeHooks[player] = nil -- Cleanup
+	local inv = {}
+	if player:FindFirstChild("FishInventory") then
+		for _, item in pairs(player.FishInventory:GetChildren()) do
+			table.insert(inv, item.Name)
+		end
+	end
+
+	local hasRod = (player.Backpack:FindFirstChild("FlimsyRod") or (player.Character and player.Character:FindFirstChild("FlimsyRod"))) ~= nil
+
+	pcall(function()
+		PlayerData:SetAsync(player.UserId, {Cash = player.leaderstats.Cash.Value, Inventory = inv, HasRod = hasRod})
+	end)
+end)
+
+-- 3. NEW LOGIC HANDLER
+CatchEvent.OnServerEvent:Connect(function(player, action, data)
+
+	-- STEP 1: Player asks "What is biting?"
+	if action == "RequestBite" then
+		local zoneName = data
+		local potentialFish = {}
+		local totalWeight = 0
+
+		for name, info in pairs(FishDB.Fish) do
+			if info.Zone == zoneName or info.Zone == "Any" then
+				table.insert(potentialFish, {Name = name, Rarity = info.Rarity})
+				totalWeight = totalWeight + info.Rarity
+			end
+		end
+
+		-- Failsafe
+		if #potentialFish == 0 then
+			table.insert(potentialFish, {Name = "Old Boot", Rarity = 10})
+			totalWeight = 10
+		end
+
+		-- Pick the fish
+		local rng = math.random(1, totalWeight)
+		local currentWeight = 0
+		local pickedFish = "Old Boot"
+
+		for _, fish in pairs(potentialFish) do
+			currentWeight = currentWeight + fish.Rarity
+			if rng <= currentWeight then
+				pickedFish = fish.Name
+				break
+			end
+		end
+
+		-- Save this choice in server memory
+		activeHooks[player] = pickedFish
+
+		-- Tell client: "You hooked a X!"
+		CatchEvent:FireClient(player, "Hooked", pickedFish)
+
+		-- STEP 2: Player says "I won the minigame!"
+	elseif action == "ClaimCatch" then
+		local hookedFish = activeHooks[player]
+
+		if hookedFish then
+			-- Verify against DB
+			local fishData = FishDB.Fish[hookedFish]
+			if fishData then
+				-- Give Item
+				local tag = Instance.new("StringValue", player.FishInventory)
+				tag.Name = hookedFish
+
+				print(player.Name .. " caught " .. hookedFish)
+
+				-- Tell client to show reward
+				CatchEvent:FireClient(player, "Reward", hookedFish)
+			end
+		end
+
+		-- Clear hook
+		activeHooks[player] = nil
+	end
+end)
