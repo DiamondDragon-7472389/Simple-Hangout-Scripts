@@ -1,11 +1,30 @@
 -- StarterGUI->FishingGUI->SideMenu->InvetoryFrame->InvetoryHandler
+print("Inventory Script: STARTING...")
+
 local player = game.Players.LocalPlayer
 local gui = script.Parent.Parent
 local frame = script.Parent
 local list = frame:WaitForChild("List")
 local template = frame:WaitForChild("Template")
-local sideMenu = gui:WaitForChild("SideMenu") 
-local openBtn = sideMenu:WaitForChild("OpenInventory")
+
+-- DEBUG: Check for SideMenu
+print("Inventory Script: Looking for SideMenu...")
+local sideMenu = gui:WaitForChild("SideMenu", 5) -- Waits 5 seconds max
+if not sideMenu then
+	warn("CRITICAL ERROR: Could not find 'SideMenu' inside FishingGUI! Check spelling!")
+	return
+end
+
+-- DEBUG: Check for Button
+print("Inventory Script: Looking for OpenInventory button...")
+local openBtn = sideMenu:WaitForChild("OpenInventory", 5)
+if not openBtn then
+	warn("CRITICAL ERROR: Could not find 'OpenInventory' inside SideMenu! Check spelling!")
+	return
+end
+
+print("Inventory Script: SETUP COMPLETE. Ready for clicks.")
+
 local inventoryFolder = player:WaitForChild("FishInventory")
 local FishDB = require(game.ReplicatedStorage:WaitForChild("FishDatabase"))
 
@@ -13,6 +32,7 @@ local isOpen = false
 frame.Visible = false
 
 function UpdateInventory()
+	print("Updating Inventory...")
 	-- 1. Clear old items
 	for _, child in pairs(list:GetChildren()) do
 		if child:IsA("Frame") then child:Destroy() end
@@ -33,24 +53,27 @@ function UpdateInventory()
 			clone.Parent = list
 			clone.Visible = true
 
-			clone.NameLabel.Text = fishName
-			clone.CountLabel.Text = "x" .. count
-			-- clone.Icon.Image = data.Image -- Uncomment if you added images!
+			-- Check if labels exist before changing text to prevent errors
+			if clone:FindFirstChild("NameLabel") then
+				clone.NameLabel.Text = fishName
+			end
+			if clone:FindFirstChild("CountLabel") then
+				clone.CountLabel.Text = "x" .. count
+			end
 
-			-- Hover for Description (Simple method)
+			-- Hover for Description
 			clone.MouseEnter:Connect(function()
 				local totalVal = count * data.Price
 				print(data.Description .. " | Value: " .. totalVal)
-				-- You can add a tooltip TextLabel here later!
 			end)
 		end
 	end
 end
 
 openBtn.MouseButton1Click:Connect(function()
+	print("BUTTON CLICKED!") -- If you don't see this, the button is blocked!
 	isOpen = not isOpen
 	frame.Visible = isOpen
 	if isOpen then
 		UpdateInventory()
 	end
-end)
