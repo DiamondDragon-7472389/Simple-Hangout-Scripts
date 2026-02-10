@@ -29,10 +29,16 @@ Players.PlayerAdded:Connect(function(player)
 				fishTag.Name = fishName
 			end
 		end
+
+		
 		if data.HasRod then
 			local rod = game.ServerStorage:FindFirstChild("FlimsyRod")
-			if rod then rod:Clone().Parent = player.Backpack end
+			if rod then 
+				rod:Clone().Parent = player.Backpack
+				rod:Clone().Parent = player.StarterGear -- Keeps rod after death!
+			end
 		end
+		
 	end
 end)
 
