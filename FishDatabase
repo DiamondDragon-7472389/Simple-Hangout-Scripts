@@ -1,0 +1,60 @@
+-- ReplicatedStorage->FishDatabase
+local FishDatabase = {}
+
+FishDatabase.Fish = {
+	-- GLOBAL ITEMS
+	["Old Boot"] = {
+		Zone = "Any",
+		Rarity = 10,
+		Price = 1,
+		Description = "A leather boot that someone, somehow lost here. But hey, better then nothing...right?",
+		Difficulty = {
+			FishSpeed = 0,         -- 0 = Doesn't move at all
+			BarSize = 0.4,         -- 0.4 = Huge catch area (Easy)
+			PassiveDrain = 0.0005, -- Very slow drain
+			CatchGain = 0.005      -- Catches very fast
+		}
+	},
+
+	-- CAVE FISH
+	["Gloomfish"] = {
+		Zone = "Cave",
+		Rarity = 100,
+		Price = 15,
+		Description = "A small lazy fish that mostly just sits around filter feeding. Also seems to have a slight blue-ish glow to it.",
+		Difficulty = {
+			FishSpeed = 0.02,      -- Slow movement
+			BarSize = 0.3,         -- Normal bar
+			PassiveDrain = 0.001,
+			CatchGain = 0.003
+		}
+	},
+	["Crystal Carp"] = {
+		Zone = "Cave",
+		Rarity = 20,
+		Price = 120,
+		Description = "A shiny fish with small eyes. Not made of crystals, but still pays the bills.",
+		Difficulty = {
+			FishSpeed = 0.05,      -- Fast!
+			BarSize = 0.3,         -- Smaller bar
+			PassiveDrain = 0.002,  -- Drains faster
+			CatchGain = 0.003
+		}
+	},
+
+	-- OCEAN FISH
+	["Salty Bass"] = {
+		Zone = "Ocean",
+		Rarity = 100,
+		Price = 25,
+		Description = "A sea bass variant with a extra salty taste to it.",
+		Difficulty = {
+			FishSpeed = 0.03,
+			BarSize = 0.25,
+			PassiveDrain = 0.0015,
+			CatchGain = 0.003
+		}
+	}
+}
+
+return FishDatabase
