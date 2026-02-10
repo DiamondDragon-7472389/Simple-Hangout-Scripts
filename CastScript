@@ -1,0 +1,244 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+-- REFERENCES
+local tool = script.Parent
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+local FishDB = require(ReplicatedStorage:WaitForChild("FishDatabase"))
+local CatchEvent = ReplicatedStorage:WaitForChild("CatchFish")
+
+-- GUI REFERENCES
+local playerGui = player:WaitForChild("PlayerGui")
+local fishingGui = playerGui:WaitForChild("FishingGUI")
+local chargeBg = fishingGui:WaitForChild("ChargeBackground")
+local chargeBar = chargeBg:WaitForChild("Bar")
+local rewardFrame = fishingGui:WaitForChild("RewardFrame")
+local rewardLabel = rewardFrame:WaitForChild("FishNameLabel")
+
+-- MINIGAME GUI
+local catchFrame = fishingGui:WaitForChild("CatchFrame")
+local catchTrack = catchFrame:WaitForChild("Track")
+local catchZone = catchTrack:WaitForChild("CatchZone")
+local fishIcon = catchTrack:WaitForChild("FishIcon")
+local progressBar = catchFrame:WaitForChild("ProgressBackground"):WaitForChild("CurrentProgress")
+
+-- DEFAULT SETTINGS (Overwritten by Fish Stats)
+local DEFAULT_STATS = {
+	FishSpeed = 0.02,
+	BarSize = 0.3,
+	PassiveDrain = 0.001,
+	CatchGain = 0.003
+}
+local currentStats = DEFAULT_STATS
+
+-- VARIABLES
+local bobber = nil
+local isCharging = false
+local currentPower = 0
+local castConnection = nil
+local minigameConnection = nil
+local waitingForBite = false
+local isFishing = false
+local currentZone = "Any"
+local isMouseDown = false
+local bobberParams = nil
+
+-- GAME VARIABLES
+local barPos = 0
+local fishPos = 0.5
+local fishTarget = 0.5
+local progress = 0.3
+local REEL_POWER = 0.008 
+local GRAVITY = 0.005
+
+local handle = tool:WaitForChild("Handle")
+local tipAttachment = handle:WaitForChild("TipAttachment")
+
+-- 1. INPUT START
+tool.Activated:Connect(function()
+	if isFishing then isMouseDown = true return end
+	if waitingForBite then ResetFishing() return end
+	if bobber then return end
+
+	isCharging = true
+	currentPower = 10
+	chargeBg.Visible = true
+
+	while isCharging and currentPower < 100 do
+		currentPower = currentPower + 2
+		chargeBar.Size = UDim2.new(currentPower/100, 0, 1, 0)
+		task.wait(0.02)
+	end
+end)
+
+tool.Deactivated:Connect(function()
+	if isFishing then isMouseDown = false return end
+	if isCharging then
+		isCharging = false
+		chargeBg.Visible = false
+		FireBobber(currentPower)
+	end
+end)
+
+-- 2. PHYSICS
+function FireBobber(power)
+	local tmpl = ReplicatedStorage:FindFirstChild("Bobber")
+	if not tmpl then return end
+
+	bobber = tmpl:Clone()
+	bobber.Parent = workspace
+	bobber.CFrame = tipAttachment.WorldCFrame
+
+	local rope = Instance.new("RopeConstraint", bobber)
+	rope.Attachment0 = tipAttachment
+	local att1 = Instance.new("Attachment", bobber)
+	rope.Attachment1 = att1
+	rope.Visible = true
+	rope.Thickness = 0.02
+	rope.Length = (power * 2) + 5
+	rope.Color = BrickColor.new("Institutional white")
+
+	local vel = workspace.CurrentCamera.CFrame.LookVector * (power * 1.5) + Vector3.new(0, 15, 0)
+	bobber.AssemblyLinearVelocity = vel
+
+	castConnection = RunService.Heartbeat:Connect(CheckBobberCollision)
+end
+
+function CheckBobberCollision()
+	if not bobber then return end
+	local params = RaycastParams.new()
+	params.FilterDescendantsInstances = {bobber, player.Character}
+	params.FilterType = Enum.RaycastFilterType.Exclude
+
+	local res = workspace:Raycast(bobber.Position, Vector3.new(0, -2, 0), params)
+
+	if res then
+		if res.Material == Enum.Material.Water or res.Instance.Name == "Water" or res.Instance.Name == "WaterBlock" then
+			currentZone = res.Instance:GetAttribute("Zone") or "Any"
+			AnchorBobberInWater(res.Position.Y)
+		else
+			ResetFishing()
+		end
+	elseif bobber.Position.Y < -100 then
+		ResetFishing()
+	end
+end
+
+function AnchorBobberInWater(y)
+	if castConnection then castConnection:Disconnect() end
+	bobber.Anchored = true
+	bobber.Position = Vector3.new(bobber.Position.X, y, bobber.Position.Z)
+
+	local rope = bobber:FindFirstChild("RopeConstraint")
+	if rope then rope.Length = (tipAttachment.WorldPosition - bobber.Position).Magnitude + 3 end
+
+	waitingForBite = true
+	print("Waiting for fish...")
+
+	-- REQUEST BITE FROM SERVER
+	task.delay(math.random(2, 6), function()
+		if waitingForBite and bobber then
+			print("Requesting bite for zone: " .. currentZone)
+			CatchEvent:FireServer("RequestBite", currentZone)
+		end
+	end)
+end
+
+-- 3. SERVER LISTENER (Handles Hook & Reward)
+CatchEvent.OnClientEvent:Connect(function(action, data)
+	if action == "Hooked" then
+		-- Server says: "You hooked a [FishName]"
+		StartMinigame(data)
+
+	elseif action == "Reward" then
+		-- Server says: "Here is your [FishName]"
+		rewardLabel.Text = "You caught a " .. data .. "!"
+		rewardFrame.Visible = true
+		task.wait(3)
+		rewardFrame.Visible = false
+	end
+end)
+
+-- 4. MINIGAME (With Difficulty Stats)
+function StartMinigame(fishName)
+	if not waitingForBite then return end -- Cancelled already
+	waitingForBite = false
+	isFishing = true
+
+	-- LOAD STATS
+	local fishData = FishDB.Fish[fishName]
+	if fishData and fishData.Difficulty then
+		currentStats = fishData.Difficulty
+		print("Loaded difficulty for " .. fishName)
+	else
+		currentStats = DEFAULT_STATS
+	end
+
+	-- Apply Visuals
+	catchZone.Size = UDim2.new(currentStats.BarSize, 0, 1, 0)
+	catchFrame.Visible = true
+
+	-- Reset Variables
+	barPos = 0.2
+	fishPos = 0.5
+	fishTarget = math.random()
+	progress = 0.3
+	isMouseDown = false
+
+	minigameConnection = RunService.RenderStepped:Connect(UpdateMinigame)
+end
+
+function UpdateMinigame(dt)
+	-- Physics
+	if isMouseDown then barPos += REEL_POWER else barPos -= GRAVITY end
+	barPos = math.clamp(barPos, 0, 1 - currentStats.BarSize)
+
+	-- Fish AI (Uses FishSpeed from DB)
+	fishPos = fishPos + (fishTarget - fishPos) * currentStats.FishSpeed
+	if math.abs(fishPos - fishTarget) < 0.05 then fishTarget = math.random() * (1 - 0.1) end
+
+	-- Collision
+	local caught = (fishPos >= barPos) and (fishPos <= barPos + currentStats.BarSize)
+
+	-- Progress (Uses Drain/Gain from DB)
+	if caught then
+		progress += currentStats.CatchGain
+		progressBar.BackgroundColor3 = Color3.fromRGB(85, 255, 127)
+	else
+		progress -= currentStats.PassiveDrain
+		progressBar.BackgroundColor3 = Color3.fromRGB(255, 85, 85)
+	end
+	progress = math.clamp(progress, 0, 1)
+
+	-- UI Update
+	catchZone.Position = UDim2.new(barPos, 0, 0, 0)
+	fishIcon.Position = UDim2.new(fishPos, 0, 0.5, 0)
+	progressBar.Size = UDim2.new(progress, 0, 1, 0)
+
+	if progress >= 1 then WinGame() elseif progress <= 0 then LoseGame() end
+end
+
+function WinGame()
+	print("CAUGHT IT!")
+	CatchEvent:FireServer("ClaimCatch") -- Claim the fish we hooked
+	ResetFishing()
+end
+
+function LoseGame()
+	ResetFishing()
+end
+
+function ResetFishing()
+	if castConnection then castConnection:Disconnect() end
+	if minigameConnection then minigameConnection:Disconnect() end
+	if bobber then bobber:Destroy() end
+	bobber = nil
+	isCharging = false
+	waitingForBite = false
+	isFishing = false
+	chargeBg.Visible = false
+	catchFrame.Visible = false
+end
