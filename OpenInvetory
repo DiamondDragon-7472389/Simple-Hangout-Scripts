@@ -1,0 +1,56 @@
+-- StarterGUI->FishingGUI->SideMenu->InvetoryFrame->InvetoryHandler
+local player = game.Players.LocalPlayer
+local gui = script.Parent.Parent
+local frame = script.Parent
+local list = frame:WaitForChild("List")
+local template = frame:WaitForChild("Template")
+local sideMenu = gui:WaitForChild("SideMenu") 
+local openBtn = sideMenu:WaitForChild("OpenInventory")
+local inventoryFolder = player:WaitForChild("FishInventory")
+local FishDB = require(game.ReplicatedStorage:WaitForChild("FishDatabase"))
+
+local isOpen = false
+frame.Visible = false
+
+function UpdateInventory()
+	-- 1. Clear old items
+	for _, child in pairs(list:GetChildren()) do
+		if child:IsA("Frame") then child:Destroy() end
+	end
+
+	-- 2. Count items
+	local counts = {}
+	for _, item in pairs(inventoryFolder:GetChildren()) do
+		counts[item.Name] = (counts[item.Name] or 0) + 1
+	end
+
+	-- 3. Create frames
+	for fishName, count in pairs(counts) do
+		local data = FishDB.Fish[fishName]
+		if data then
+			local clone = template:Clone()
+			clone.Name = fishName
+			clone.Parent = list
+			clone.Visible = true
+
+			clone.NameLabel.Text = fishName
+			clone.CountLabel.Text = "x" .. count
+			-- clone.Icon.Image = data.Image -- Uncomment if you added images!
+
+			-- Hover for Description (Simple method)
+			clone.MouseEnter:Connect(function()
+				local totalVal = count * data.Price
+				print(data.Description .. " | Value: " .. totalVal)
+				-- You can add a tooltip TextLabel here later!
+			end)
+		end
+	end
+end
+
+openBtn.MouseButton1Click:Connect(function()
+	isOpen = not isOpen
+	frame.Visible = isOpen
+	if isOpen then
+		UpdateInventory()
+	end
+end)
