@@ -36,10 +36,10 @@ Players.PlayerAdded:Connect(function(player)
 
 	-- C. Load Data
 	local success, data = pcall(function() return PlayerData:GetAsync(player.UserId) end)
-	
+
 	if success and data then
 		cash.Value = data.Cash or 0
-		
+
 		-- Load Caught Fish
 		if data.Inventory then
 			for _, fishName in pairs(data.Inventory) do
@@ -67,7 +67,7 @@ end)
 -- 3. SAVE DATA
 Players.PlayerRemoving:Connect(function(player)
 	activeHooks[player] = nil
-	
+
 	local inv = {}
 	if player:FindFirstChild("FishInventory") then
 		for _, item in pairs(player.FishInventory:GetChildren()) do
@@ -92,41 +92,51 @@ end)
 
 -- 4. HANDLE FISHING LOGIC
 CatchEvent.OnServerEvent:Connect(function(player, action, data)
-	
+
 	-- A. Requesting a Bite
 	if action == "RequestBite" then
 		local zoneName = data
-		local potentialFish = {}
-		local totalWeight = 0
-		
-		print("Server: " .. player.Name .. " fishing in zone: " .. tostring(zoneName))
-
-		-- Filter fish by Zone
-		for name, info in pairs(FishDB.Fish) do
-			-- Check if zone matches exactly OR if fish is global ("Any")
-			if info.Zone == zoneName or info.Zone == "Any" then
-				table.insert(potentialFish, {Name = name, Rarity = info.Rarity})
-				totalWeight = totalWeight + info.Rarity
-			end
-		end
-		
-		-- FAILSAFE: If zone is wrong (e.g. typo "Ocen"), give default fish
-		if #potentialFish == 0 then
-			print("Server Warning: No fish found for zone '"..zoneName.."'. Using defaults.")
-			table.insert(potentialFish, {Name = "Old Boot", Rarity = 100})
-			totalWeight = 100
-		end
-
-		-- Weighted Random Choice
-		local rng = math.random(1, totalWeight)
-		local currentWeight = 0
 		local pickedFish = "Old Boot"
 
-		for _, fish in pairs(potentialFish) do
-			currentWeight = currentWeight + fish.Rarity
-			if rng <= currentWeight then
-				pickedFish = fish.Name
-				break
+		-- 1. CHECK FOR ADMIN OVERRIDE (New Code)
+		local forced = player:GetAttribute("ForcedCatch")
+		if forced and forced ~= "" then
+			print("⚡ ADMIN FORCE CATCH: " .. forced)
+			pickedFish = forced
+			-- Clear it so it only happens once (Optional: Remove this line to keep forcing it forever)
+			player:SetAttribute("ForcedCatch", nil) 
+
+		else
+			-- 2. NORMAL LOGIC (Existing Code)
+			local potentialFish = {}
+			local totalWeight = 0
+
+			print("Server: " .. player.Name .. " fishing in zone: " .. tostring(zoneName))
+
+			-- Filter fish by Zone
+			for name, info in pairs(FishDB.Fish) do
+				if info.Zone == zoneName or info.Zone == "Any" then
+					table.insert(potentialFish, {Name = name, Rarity = info.Rarity})
+					totalWeight = totalWeight + info.Rarity
+				end
+			end
+
+			-- Failsafe
+			if #potentialFish == 0 then
+				table.insert(potentialFish, {Name = "Old Boot", Rarity = 100})
+				totalWeight = 100
+			end
+
+			-- Weighted Random Choice
+			local rng = math.random(1, totalWeight)
+			local currentWeight = 0
+
+			for _, fish in pairs(potentialFish) do
+				currentWeight = currentWeight + fish.Rarity
+				if rng <= currentWeight then
+					pickedFish = fish.Name
+					break
+				end
 			end
 		end
 
@@ -134,10 +144,10 @@ CatchEvent.OnServerEvent:Connect(function(player, action, data)
 		activeHooks[player] = pickedFish
 		CatchEvent:FireClient(player, "Hooked", pickedFish)
 
-	-- B. Claiming a Catch
+		-- B. Claiming a Catch
 	elseif action == "ClaimCatch" then
 		local hookedFish = activeHooks[player]
-		
+
 		if hookedFish then
 			local fishData = FishDB.Fish[hookedFish]
 			if fishData then
@@ -147,7 +157,7 @@ CatchEvent.OnServerEvent:Connect(function(player, action, data)
 				tag.Parent = player.FishInventory
 
 				print(player.Name .. " successfully caught " .. hookedFish)
-				
+
 				-- Tell client to show UI
 				CatchEvent:FireClient(player, "Reward", hookedFish)
 			end
