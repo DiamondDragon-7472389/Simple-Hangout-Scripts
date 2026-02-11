@@ -10,9 +10,11 @@ FishDatabase.Fish = {
 		Description = "A leather boot that someone, somehow lost here. But hey, better then nothing...right?",
 		Difficulty = {
 			FishSpeed = 0,         -- 0 = Doesn't move at all
-			BarSize = 0.4,         -- 0.4 = Huge catch area (Easy)
+			BarSize = 0.5,         -- 0.4 = Huge catch area (Easy)
 			PassiveDrain = 0.0005, -- Very slow drain
-			CatchGain = 0.005      -- Catches very fast
+			CatchGain = 0.005,      -- Catches very fast
+			ReelPower = 0.01,
+			Gravity = 0.005
 		}
 	},
 
@@ -26,7 +28,9 @@ FishDatabase.Fish = {
 			FishSpeed = 0.02,      -- Slow movement
 			BarSize = 0.3,         -- Normal bar
 			PassiveDrain = 0.001,
-			CatchGain = 0.003
+			CatchGain = 0.003,
+			ReelPower = 0.01,
+			Gravity = 0.005
 		}
 	},
 	["Crystal Carp"] = {
@@ -36,9 +40,11 @@ FishDatabase.Fish = {
 		Description = "A shiny fish with small eyes. Not made of crystals, but still pays the bills.",
 		Difficulty = {
 			FishSpeed = 0.05,      -- Fast!
-			BarSize = 0.3,         -- Smaller bar
+			BarSize = 0.3,         
 			PassiveDrain = 0.002,  -- Drains faster
-			CatchGain = 0.003
+			CatchGain = 0.003,
+			ReelPower = 0.02,     
+			Gravity = 0.01
 		}
 	},
 
@@ -50,11 +56,29 @@ FishDatabase.Fish = {
 		Description = "A sea bass variant with a extra salty taste to it.",
 		Difficulty = {
 			FishSpeed = 0.03,
-			BarSize = 0.25,
+			BarSize = 0.3,
 			PassiveDrain = 0.0015,
-			CatchGain = 0.003
+			CatchGain = 0.003,
+			ReelPower = 0.01,
+			Gravity = 0.005
 		}
-	}
+	},
+
+	["Tuna"] = {
+		Zone = "Ocean",
+		Rarity = 100,
+		Price = 250,
+		Description = "A strong and fast fish that is perfect for tuna salad, and also pays a heafty amount due to their size.",
+		Difficulty = {
+			FishSpeed = 0.05,
+			BarSize = 0.3,
+			PassiveDrain = 0.002,
+			CatchGain = 0.003,
+			ReelPower = 0.012, 
+			Gravity = 0.006
+		}
+	},
+	
 }
 
 return FishDatabase
