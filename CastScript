@@ -31,8 +31,12 @@ local DEFAULT_STATS = {
 	FishSpeed = 0.02,
 	BarSize = 0.3,
 	PassiveDrain = 0.001,
-	CatchGain = 0.003
+	CatchGain = 0.003,
+	-- Add these defaults so the script doesn't break on old fish
+	ReelPower = 0.01,
+	Gravity = 0.005
 }
+
 local currentStats = DEFAULT_STATS
 
 -- VARIABLES
@@ -58,33 +62,10 @@ local GRAVITY = 0.005
 local handle = tool:WaitForChild("Handle")
 local tipAttachment = handle:WaitForChild("TipAttachment")
 
--- 1. INPUT START
-tool.Activated:Connect(function()
-	if isFishing then isMouseDown = true return end
-	if waitingForBite then ResetFishing() return end
-	if bobber then return end
+-- NOTE: Old 'tool.Activated' code is REMOVED. 
+-- We now use UserInputService at the bottom for Mobile/PC support.
 
-	isCharging = true
-	currentPower = 10
-	chargeBg.Visible = true
-
-	while isCharging and currentPower < 100 do
-		currentPower = currentPower + 2
-		chargeBar.Size = UDim2.new(currentPower/100, 0, 1, 0)
-		task.wait(0.02)
-	end
-end)
-
-tool.Deactivated:Connect(function()
-	if isFishing then isMouseDown = false return end
-	if isCharging then
-		isCharging = false
-		chargeBg.Visible = false
-		FireBobber(currentPower)
-	end
-end)
-
--- 2. PHYSICS
+-- 1. PHYSICS (Throwing)
 function FireBobber(power)
 	local tmpl = ReplicatedStorage:FindFirstChild("Bobber")
 	if not tmpl then return end
@@ -108,23 +89,44 @@ function FireBobber(power)
 	castConnection = RunService.Heartbeat:Connect(CheckBobberCollision)
 end
 
+-- 2. COLLISION (Now uses Spatial Query to ignore Terrain issues)
 function CheckBobberCollision()
 	if not bobber then return end
+
+	-- A. CHECK IF WE HIT WATER (Terrain OR Part)
 	local params = RaycastParams.new()
 	params.FilterDescendantsInstances = {bobber, player.Character}
 	params.FilterType = Enum.RaycastFilterType.Exclude
 
-	local res = workspace:Raycast(bobber.Position, Vector3.new(0, -2, 0), params)
+	-- Check 5 studs down
+	local res = workspace:Raycast(bobber.Position, Vector3.new(0, -5, 0), params)
 
 	if res then
-		if res.Material == Enum.Material.Water or res.Instance.Name == "Water" or res.Instance.Name == "WaterBlock" then
-			currentZone = res.Instance:GetAttribute("Zone") or "Any"
+		local isWater = (res.Material == Enum.Material.Water) or (res.Instance.Name == "Water") or (res.Instance.Name == "WaterBlock")
+
+		if isWater then
+			-- B. ZONE DETECTION UPGRADE
+			-- Instead of relying on the Raycast (which hits Terrain), we scan 
+			-- a 5-stud radius around the bobber for ANY part with a "Zone" attribute.
+			local nearbyParts = workspace:GetPartBoundsInRadius(bobber.Position, 5)
+			local foundZone = "Any"
+
+			for _, part in pairs(nearbyParts) do
+				local attr = part:GetAttribute("Zone")
+				if attr then
+					foundZone = attr
+					print("✅ FOUND ZONE PART: " .. part.Name .. " | Zone: " .. foundZone)
+					break -- We found a valid zone, stop looking
+				end
+			end
+
+			currentZone = foundZone
 			AnchorBobberInWater(res.Position.Y)
 		else
-			ResetFishing()
+			ResetFishing() -- Hit land
 		end
 	elseif bobber.Position.Y < -100 then
-		ResetFishing()
+		ResetFishing() -- Void
 	end
 end
 
@@ -137,39 +139,36 @@ function AnchorBobberInWater(y)
 	if rope then rope.Length = (tipAttachment.WorldPosition - bobber.Position).Magnitude + 3 end
 
 	waitingForBite = true
-	print("Waiting for fish...")
+	print("Waiting for fish in Zone: " .. currentZone)
 
 	-- REQUEST BITE FROM SERVER
 	task.delay(math.random(2, 6), function()
 		if waitingForBite and bobber then
-			print("Requesting bite for zone: " .. currentZone)
 			CatchEvent:FireServer("RequestBite", currentZone)
 		end
 	end)
 end
 
--- 3. SERVER LISTENER (Handles Hook & Reward)
+-- 3. SERVER LISTENER
 CatchEvent.OnClientEvent:Connect(function(action, data)
 	if action == "Hooked" then
-		-- Server says: "You hooked a [FishName]"
 		StartMinigame(data)
-
 	elseif action == "Reward" then
-		-- Server says: "Here is your [FishName]"
-		rewardLabel.Text = "You caught a " .. data .. "!"
-		rewardFrame.Visible = true
-		task.wait(3)
-		rewardFrame.Visible = false
+		if rewardLabel then rewardLabel.Text = "You caught a " .. data .. "!" end
+		if rewardFrame then
+			rewardFrame.Visible = true
+			task.wait(3)
+			rewardFrame.Visible = false
+		end
 	end
 end)
 
--- 4. MINIGAME (With Difficulty Stats)
+-- 4. MINIGAME
 function StartMinigame(fishName)
-	if not waitingForBite then return end -- Cancelled already
+	if not waitingForBite then return end
 	waitingForBite = false
 	isFishing = true
 
-	-- LOAD STATS
 	local fishData = FishDB.Fish[fishName]
 	if fishData and fishData.Difficulty then
 		currentStats = fishData.Difficulty
@@ -178,11 +177,9 @@ function StartMinigame(fishName)
 		currentStats = DEFAULT_STATS
 	end
 
-	-- Apply Visuals
 	catchZone.Size = UDim2.new(currentStats.BarSize, 0, 1, 0)
 	catchFrame.Visible = true
 
-	-- Reset Variables
 	barPos = 0.2
 	fishPos = 0.5
 	fishTarget = math.random()
@@ -193,18 +190,22 @@ function StartMinigame(fishName)
 end
 
 function UpdateMinigame(dt)
-	-- Physics
-	if isMouseDown then barPos += REEL_POWER else barPos -= GRAVITY end
-	barPos = math.clamp(barPos, 0, 1 - currentStats.BarSize)
+		if isMouseDown then 
+			barPos += currentStats.ReelPower 
+		else 
+			barPos -= currentStats.Gravity 
+		end
 
-	-- Fish AI (Uses FishSpeed from DB)
+		barPos = math.clamp(barPos, 0, 1 - currentStats.BarSize)
+
+	-- AI
 	fishPos = fishPos + (fishTarget - fishPos) * currentStats.FishSpeed
 	if math.abs(fishPos - fishTarget) < 0.05 then fishTarget = math.random() * (1 - 0.1) end
 
 	-- Collision
 	local caught = (fishPos >= barPos) and (fishPos <= barPos + currentStats.BarSize)
 
-	-- Progress (Uses Drain/Gain from DB)
+	-- Progress
 	if caught then
 		progress += currentStats.CatchGain
 		progressBar.BackgroundColor3 = Color3.fromRGB(85, 255, 127)
@@ -214,7 +215,7 @@ function UpdateMinigame(dt)
 	end
 	progress = math.clamp(progress, 0, 1)
 
-	-- UI Update
+	-- UI
 	catchZone.Position = UDim2.new(barPos, 0, 0, 0)
 	fishIcon.Position = UDim2.new(fishPos, 0, 0.5, 0)
 	progressBar.Size = UDim2.new(progress, 0, 1, 0)
@@ -224,7 +225,7 @@ end
 
 function WinGame()
 	print("CAUGHT IT!")
-	CatchEvent:FireServer("ClaimCatch") -- Claim the fish we hooked
+	CatchEvent:FireServer("ClaimCatch")
 	ResetFishing()
 end
 
@@ -240,6 +241,71 @@ function ResetFishing()
 	isCharging = false
 	waitingForBite = false
 	isFishing = false
-	chargeBg.Visible = false
-	catchFrame.Visible = false
+	isMouseDown = false
+	if chargeBg then chargeBg.Visible = false end
+	if catchFrame then catchFrame.Visible = false end
 end
+
+-- 5. UNIVERSAL INPUT (MOBILE & PC)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end 
+
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+
+		-- REELING (Minigame Active)
+		if isFishing then
+			isMouseDown = true
+			return
+		end
+
+		-- CHARGING (Rod equipped, ready to cast)
+		if tool.Parent == player.Character and not isFishing and not waitingForBite and not bobber then
+			isCharging = true
+			currentPower = 10
+			chargeBg.Visible = true
+
+			-- BOUNCING CHARGE LOGIC
+			local chargeDirection = 1 -- 1 = Up, -1 = Down
+
+			task.spawn(function()
+				while isCharging do
+					-- Move power based on direction
+					currentPower = currentPower + (2 * chargeDirection)
+
+					-- Bounce at Top (100)
+					if currentPower >= 100 then
+						currentPower = 100
+						chargeDirection = -1 -- Start going down
+					end
+
+					-- Bounce at Bottom (10)
+					if currentPower <= 10 then
+						currentPower = 10
+						chargeDirection = 1 -- Start going up
+					end
+
+					chargeBar.Size = UDim2.new(currentPower/100, 0, 1, 0)
+					task.wait(0.01) -- Faster refresh for smoother bounce
+				end
+			end)
+		end
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		-- STOP REELING
+		if isFishing then
+			isMouseDown = false
+		end
+
+		-- FIRE CAST
+		if isCharging then
+			isCharging = false
+			chargeBg.Visible = false
+			FireBobber(currentPower)
+		end
+	end
+end)
+
+tool.Unequipped:Connect(ResetFishing)
