@@ -1,0 +1,76 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local FishDB = require(ReplicatedStorage:WaitForChild("FishDatabase"))
+
+-- SETUP EVENT
+local AdminEvent = Instance.new("RemoteEvent")
+AdminEvent.Name = "AdminAction"
+AdminEvent.Parent = ReplicatedStorage
+
+-- CONFIGURATION
+local ROLES = {
+	[2732732557] = "Owner", -- REPLACE WITH YOUR REAL USER ID
+	[516014352] = "XBOXTester", -- Add friends here
+	[5657516862] = "MobileTester", -- Add more friends
+}
+
+-- 1. GIVE TITLES & UI ACCESS
+Players.PlayerAdded:Connect(function(player)
+	local role = ROLES[player.UserId]
+
+	if role then
+		print("Admin joined: " .. player.Name .. " (" .. role .. ")")
+
+		-- A. Give Client Access to Panel
+		player:SetAttribute("IsAdmin", true)
+
+		-- B. Character Spawned -> Add Title
+		player.CharacterAdded:Connect(function(char)
+			local head = char:WaitForChild("Head", 10)
+			if head then
+				-- Create Billboard
+				local bb = Instance.new("BillboardGui")
+				bb.Name = "RankTitle"
+				bb.Adornee = head
+				bb.Size = UDim2.new(0, 200, 0, 50)
+				bb.StudsOffset = Vector3.new(0, 2, 0)
+				bb.AlwaysOnTop = true
+
+				local label = Instance.new("TextLabel")
+				label.Parent = bb
+				label.Size = UDim2.new(1, 0, 1, 0)
+				label.BackgroundTransparency = 1
+				label.Text = "[" .. role .. "]"
+				label.TextStrokeTransparency = 0
+
+				-- Color Coding
+				if role == "Owner" then
+					label.TextColor3 = Color3.fromRGB(255, 0, 0) -- Red
+				elseif role == "Tester" then
+					label.TextColor3 = Color3.fromRGB(0, 255, 0) -- Green
+				else
+					label.TextColor3 = Color3.fromRGB(255, 255, 0) -- Yellow
+				end
+
+				bb.Parent = head
+			end
+		end)
+	end
+end)
+
+-- 2. HANDLE FORCE CATCH
+AdminEvent.OnServerEvent:Connect(function(player, action, fishName)
+	-- SECURITY CHECK: Is this player actually an admin?
+	if not ROLES[player.UserId] then 
+		warn(player.Name .. " tried to use Admin Panel without permission!")
+		return 
+	end
+
+	if action == "ForceFish" then
+		if FishDB.Fish[fishName] then
+			print("ADMIN OVERRIDE: " .. player.Name .. " will catch " .. fishName)
+			-- Save the override to the player's attributes
+			player:SetAttribute("ForcedCatch", fishName)
+		end
+	end
+end)
