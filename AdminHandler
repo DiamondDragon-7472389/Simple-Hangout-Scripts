@@ -1,0 +1,95 @@
+print("Admin Client: Starting...")
+
+local player = game.Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local FishDB = require(ReplicatedStorage:WaitForChild("FishDatabase"))
+local AdminEvent = ReplicatedStorage:WaitForChild("AdminAction")
+
+local gui = script.Parent
+local toggleBtn = gui:WaitForChild("ToggleBtn")
+local panel = gui:WaitForChild("Panel")
+local list = panel:WaitForChild("List")
+
+-- DEBUG: Check for Template
+local tmpl = list:FindFirstChild("ButtonTemplate")
+if not tmpl then
+	warn("Admin Client: Template missing! Creating a temporary one.")
+	tmpl = Instance.new("TextButton")
+	tmpl.Name = "ButtonTemplate"
+	tmpl.Size = UDim2.new(1, 0, 0, 30)
+	tmpl.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	tmpl.TextColor3 = Color3.fromRGB(255, 255, 255)
+	tmpl.Parent = list
+	tmpl.Visible = false
+end
+
+-- 1. CHECK PERMISSION
+if not player:GetAttribute("IsAdmin") then
+	player:GetAttributeChangedSignal("IsAdmin"):Wait()
+end
+toggleBtn.Visible = true
+
+-- 2. SETUP ZONES (The Order You Want)
+local ZONES = {"Any", "Ocean", "Cave"} 
+
+-- Helper Function: Get sorted fish for a specific zone
+local function GetFishInZone(zoneName)
+	local found = {}
+	for name, data in pairs(FishDB.Fish) do
+		if data.Zone == zoneName then
+			table.insert(found, name)
+		end
+	end
+	table.sort(found) -- Alphabetical sort (A-Z)
+	return found
+end
+
+-- 3. POPULATE LIST (Organized)
+for _, zone in ipairs(ZONES) do
+
+	-- A. Create a Header for the Zone
+	local header = tmpl:Clone()
+	header.Parent = list
+	header.Name = "Header_" .. zone
+	header.Text = "--- " .. string.upper(zone) .. " ---"
+	header.BackgroundColor3 = Color3.fromRGB(255, 170, 0) -- Orange/Gold
+	header.TextColor3 = Color3.fromRGB(0, 0, 0) -- Black Text
+	header.Font = Enum.Font.FredokaOne -- Optional: Make it look bold
+	header.AutoButtonColor = false -- Don't click like a button
+	header.Active = false
+	header.Visible = true
+
+	-- B. Get all fish for this zone
+	local fishes = GetFishInZone(zone)
+
+	-- C. Create Buttons for these fish
+	for _, fishName in ipairs(fishes) do
+		local btn = tmpl:Clone()
+		btn.Parent = list
+		btn.Name = fishName
+		btn.Text = fishName
+		btn.Visible = true
+
+		-- Click Logic
+		btn.MouseButton1Click:Connect(function()
+			print("Requesting force: " .. fishName)
+			AdminEvent:FireServer("ForceFish", fishName)
+
+			-- Visual Feedback
+			local oldText = btn.Text
+			btn.Text = "ACTIVE!"
+			btn.BackgroundColor3 = Color3.fromRGB(0, 255, 0) -- Green Flash
+			task.wait(1)
+			btn.Text = fishName
+			btn.BackgroundColor3 = tmpl.BackgroundColor3 -- Reset Color
+		end)
+	end
+end
+
+-- Hide original template
+tmpl.Visible = false
+
+-- 4. TOGGLE PANEL
+toggleBtn.MouseButton1Click:Connect(function()
+	panel.Visible = not panel.Visible
+end)
